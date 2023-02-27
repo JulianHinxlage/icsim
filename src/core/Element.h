@@ -7,6 +7,8 @@
 #include <memory>
 #include <map>
 
+typedef int32_t Index;
+
 enum class ElementType : uint8_t {
 	NONE,
 	PIN,
@@ -83,7 +85,7 @@ struct Gate {
 
 struct Element {
 	ElementType elementType;
-	int socketIndises[3];
+	Index socketIndises[3];
 
 	Element(ElementType elementType = ElementType::NONE) {
 		memset(this, 0, sizeof(*this));
@@ -124,11 +126,11 @@ class Socket {
 public:
 	SocketType socketType = SocketType::NONE;
 	SocketSlot socketSlot = SocketSlot::PIN;
-	int elementIndex = -1;
+	Index elementIndex = -1;
 };
 
 class Connection {
 public:
-	int socket1Index = -1;
-	int socket2Index = -1;
+	Index socket1Index = -1;
+	Index socket2Index = -1;
 };

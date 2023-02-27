@@ -11,18 +11,21 @@ DigitalCircuitSimulator::DigitalCircuitSimulator(Circuit* circuit) {
 void DigitalCircuitSimulator::simulate() {
 	elementUpdateQueue.clear();
 	elementUpdateSet.clear();
-	for (int inputElement : circuit->structure.inputElements) {
-		elementUpdateQueue.push_back(inputElement);
-		elementUpdateSet.insert(inputElement);
+	for (auto &input : circuit->structure.inputElements) {
+		elementUpdateQueue.push_back(input.index);
+		elementUpdateSet.insert(input.index);
 	}
+	for (auto& socketIndex : circuit->changedSockets) {
+		propergateSignal(socketIndex);
+	}
+	circuit->changedSockets.clear();
 	processQueue();
 }
 
 void DigitalCircuitSimulator::prepare() {
 	elementUpdateQueue.clear();
 	elementUpdateSet.clear();
-	for (int i = 0; i < circuit->structure.elements.size(); i++) {
-		auto& element = circuit->structure.elements[i];
+	for (Index i = 0; i < circuit->structure.elements.size(); i++) {
 		elementUpdateQueue.push_back(i);
 		elementUpdateSet.insert(i);
 	}
@@ -31,7 +34,7 @@ void DigitalCircuitSimulator::prepare() {
 
 void DigitalCircuitSimulator::processQueue() {
 	while (!elementUpdateQueue.empty()) {
-		int elementIndex = elementUpdateQueue.front();
+		Index elementIndex = elementUpdateQueue.front();
 		elementUpdateQueue.pop_front();
 		elementUpdateSet.erase(elementIndex);
 
@@ -40,15 +43,15 @@ void DigitalCircuitSimulator::processQueue() {
 		switch (element.elementType) {
 		case ElementType::PIN: {
 			if (element.pin.pinType == PinType::IN || element.pin.pinType == PinType::CONSTANT) {
-				int socketIndex = element.socketIndises[(int)SocketSlot::PIN];
+				Index socketIndex = element.socketIndises[(int)SocketSlot::PIN];
 				propergateSignal(socketIndex);
 			}
 			break;
 		}
 		case ElementType::TRANSISTOR: {
-			int collectorIndex = element.socketIndises[(int)SocketSlot::COLLECTOR];
-			int baseIndex = element.socketIndises[(int)SocketSlot::BASE];
-			int emitterIndex = element.socketIndises[(int)SocketSlot::EMITTER];
+			Index collectorIndex = element.socketIndises[(int)SocketSlot::COLLECTOR];
+			Index baseIndex = element.socketIndises[(int)SocketSlot::BASE];
+			Index emitterIndex = element.socketIndises[(int)SocketSlot::EMITTER];
 
 			float collector = circuit->socketStates[collectorIndex].get();
 			float base = circuit->socketStates[baseIndex].get();
@@ -67,9 +70,9 @@ void DigitalCircuitSimulator::processQueue() {
 			break;
 		}
 		case ElementType::GATE: {
-			int aIndex = element.socketIndises[(int)SocketSlot::GATE_A];
-			int bIndex = element.socketIndises[(int)SocketSlot::GATE_B];
-			int outIndex = element.socketIndises[(int)SocketSlot::GATE_OUT];
+			Index aIndex = element.socketIndises[(int)SocketSlot::GATE_A];
+			Index bIndex = element.socketIndises[(int)SocketSlot::GATE_B];
+			Index outIndex = element.socketIndises[(int)SocketSlot::GATE_OUT];
 
 			float a = circuit->socketStates[aIndex].get();
 			float b = circuit->socketStates[bIndex].get();
@@ -94,7 +97,7 @@ void DigitalCircuitSimulator::processQueue() {
 				out = (float)!(a > 0 || b > 0);
 				break;
 			case GateType::XOR:
-				out = (float)(a > 0 ^ b > 0);
+				out = (float)((a > 0) ^ (b > 0));
 				break;
 			default:
 				break;
@@ -113,11 +116,11 @@ void DigitalCircuitSimulator::processQueue() {
 	}
 }
 
-void DigitalCircuitSimulator::propergateSignal(int sourceSocketIndex, std::set<int>& visitedSocketIndices, int socketIndex, float sourceVoltage) {
+void DigitalCircuitSimulator::propergateSignal(Index sourceSocketIndex, std::set<Index>& visitedSocketIndices, Index socketIndex, float sourceVoltage) {
 	//propergate the signal to all sockets connected through connections
 	//if input sockets are updated the element if put into the update queue
 	
-	for (int socketIndex2 : circuit->socketConnections[socketIndex]) {
+	for (Index socketIndex2 : circuit->socketConnections[socketIndex]) {
 		if (!visitedSocketIndices.contains(socketIndex2)) {
 			auto& socket = circuit->structure.sockets[socketIndex2];
 			auto& state = circuit->socketStates[socketIndex2];
@@ -141,8 +144,28 @@ void DigitalCircuitSimulator::propergateSignal(int sourceSocketIndex, std::set<i
 	}
 }
 
-void DigitalCircuitSimulator::propergateSignal(int socketIndex) {
-	auto& sourceState = circuit->socketStates[socketIndex];
-	std::set<int> visitedSocketIndices;
-	propergateSignal(socketIndex, visitedSocketIndices, socketIndex, sourceState.get());
+void DigitalCircuitSimulator::propergateSignal(Index socketIndex) {
+	if (recursiveSignalPropergation) {
+		auto& sourceState = circuit->socketStates[socketIndex];
+		std::set<Index> visitedSocketIndices;
+		propergateSignal(socketIndex, visitedSocketIndices, socketIndex, sourceState.get());
+	}
+	else {
+		auto& sourceState = circuit->socketStates[socketIndex];
+		for (Index socketIndex2 : circuit->socketConnections[socketIndex]) {
+			auto& socket = circuit->structure.sockets[socketIndex2];
+			auto& state = circuit->socketStates[socketIndex2];
+
+			if ((int)socket.socketType & (int)SocketType::IN) {
+				float preValue = state.get();
+				state.set(socketIndex, sourceState.get());
+				if (preValue != state.get()) {
+					if (!elementUpdateSet.contains(socket.elementIndex)) {
+						elementUpdateQueue.push_back(socket.elementIndex);
+						elementUpdateSet.insert(socket.elementIndex);
+					}
+				}
+			}
+		}
+	}
 }

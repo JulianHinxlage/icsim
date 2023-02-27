@@ -5,15 +5,16 @@
 #pragma once
 
 #include "Element.h"
+#include <string>
 
 class CircuitStructure;
 
 class CircuitBuilder {
 public:
-	CircuitBuilder(CircuitStructure* circuitStructure = nullptr);
+	CircuitBuilder(CircuitStructure* circuitStructure = nullptr, Index socketIndex = -1);
 
-	CircuitBuilder input() const;
-	CircuitBuilder output() const;
+	CircuitBuilder input(const std::string &name = "") const;
+	CircuitBuilder output(const std::string& name = "") const;
 	CircuitBuilder constant(float value) const;
 
 	CircuitBuilder AND(const CircuitBuilder& other) const;
@@ -25,16 +26,18 @@ public:
 
 	CircuitBuilder resistor(float resistance) const;
 	CircuitBuilder transistor(const CircuitBuilder& collector) const;
-	CircuitBuilder connection(const CircuitBuilder& other) const;
-	CircuitBuilder connection() const;
-	CircuitBuilder endConnection(const CircuitBuilder& other) const;
+	CircuitBuilder connect(const CircuitBuilder& other) const;
+	CircuitBuilder connector() const;
 
 	//unconnect the builder form the last socket
 	CircuitBuilder unconnect();
+	Index getSocketIndex();
+
+	void reduceConnectors();
 
 private:
 	CircuitStructure* structure;
-	int socketIndex;
+	Index socketIndex;
 
 	void pin(PinType type, float voltage);
 	void gate(GateType type, const CircuitBuilder& other);

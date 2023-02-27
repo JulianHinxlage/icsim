@@ -9,6 +9,7 @@
 class DigitalCircuitSimulator {
 public:
 	Circuit* circuit;
+	bool recursiveSignalPropergation = true;
 
 	DigitalCircuitSimulator(Circuit *circuit = nullptr);
 
@@ -19,10 +20,10 @@ public:
 	void prepare();
 
 private:
-	std::deque<int> elementUpdateQueue;
-	std::set<int> elementUpdateSet;
+	std::deque<Index> elementUpdateQueue;
+	std::set<Index> elementUpdateSet;
 
 	void processQueue();
-	void propergateSignal(int sourceSocketIndex, std::set<int>& visitedSocketIndices, int socketIndex, float sourceVoltage);
-	void propergateSignal(int socketIndex);
+	void propergateSignal(Index sourceSocketIndex, std::set<Index>& visitedSocketIndices, Index socketIndex, float sourceVoltage);
+	void propergateSignal(Index socketIndex);
 };

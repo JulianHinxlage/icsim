@@ -4,8 +4,8 @@
 
 #include "CircuitStructure.h"
 
-int CircuitStructure::addElement(const Element& element) {
-	int index = elements.size();
+Index CircuitStructure::addElement(const Element& element) {
+	Index index = elements.size();
 	elements.push_back(element);
 
 	//add sockets
@@ -50,8 +50,8 @@ int CircuitStructure::addElement(const Element& element) {
 	return index;
 }
 
-int CircuitStructure::addSocket(int elementIndex, SocketType socketType, SocketSlot socketSlot) {
-	int index = sockets.size();
+Index CircuitStructure::addSocket(Index elementIndex, SocketType socketType, SocketSlot socketSlot) {
+	Index index = sockets.size();
 	sockets.emplace_back();
 	Socket& socket = sockets.back();
 
@@ -63,8 +63,8 @@ int CircuitStructure::addSocket(int elementIndex, SocketType socketType, SocketS
 	return index;
 }
 
-int CircuitStructure::addConnection(int socket1Index, int socket2Index) {
-	int index = connections.size();
+Index CircuitStructure::addConnection(Index socket1Index, Index socket2Index) {
+	Index index = connections.size();
 	connections.emplace_back();
 	Connection& connection = connections.back();
 
@@ -74,12 +74,45 @@ int CircuitStructure::addConnection(int socket1Index, int socket2Index) {
 	return index;
 }
 
-Socket& CircuitStructure::getSocket(int elementIndex, SocketSlot socketSlot) {
-	int socketIndex = elements[elementIndex].socketIndises[(int)socketSlot];
+void CircuitStructure::removeElement(Index elementIndex) {
+	elements.erase(elements.begin() + elementIndex);
+	for (auto& s : sockets) {
+		if (s.elementIndex >= elementIndex) {
+			s.elementIndex--;
+		}
+	}
+}
+
+void CircuitStructure::removeSocket(Index socketIndex) {
+	sockets.erase(sockets.begin() + socketIndex);
+	for (auto& e : elements) {
+		for (int i = 0; i < 3; i++) {
+			if (e.socketIndises[i] >= socketIndex) {
+				e.socketIndises[i]--;
+			}
+		}
+	}
+
+	for (auto& c : connections) {
+		if (c.socket1Index >= socketIndex) {
+			c.socket1Index--;
+		}
+		if (c.socket2Index >= socketIndex) {
+			c.socket2Index--;
+		}
+	}
+}
+
+void CircuitStructure::removeConnection(Index connectionIndex) {
+	connections.erase(connections.begin() + connectionIndex);
+}
+
+Socket& CircuitStructure::getSocket(Index elementIndex, SocketSlot socketSlot) {
+	Index socketIndex = elements[elementIndex].socketIndises[(int)socketSlot];
 	return sockets[socketIndex];
 }
 
-int CircuitStructure::getSocketIndex(int elementIndex, SocketSlot socketSlot) {
-	int socketIndex = elements[elementIndex].socketIndises[(int)socketSlot];
+Index CircuitStructure::getSocketIndex(Index elementIndex, SocketSlot socketSlot) {
+	Index socketIndex = elements[elementIndex].socketIndises[(int)socketSlot];
 	return socketIndex;
 }

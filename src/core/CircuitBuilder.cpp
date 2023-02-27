@@ -4,23 +4,24 @@
 
 #include "CircuitBuilder.h"
 #include "CircuitStructure.h"
+#include <algorithm>
 
-CircuitBuilder::CircuitBuilder(CircuitStructure* circuitStructure) {
+CircuitBuilder::CircuitBuilder(CircuitStructure* circuitStructure, Index socketIndex) {
 	structure = circuitStructure;
-	socketIndex = -1;
+	this->socketIndex = socketIndex;
 }
 
-CircuitBuilder CircuitBuilder::input() const {
+CircuitBuilder CircuitBuilder::input(const std::string& name) const {
 	CircuitBuilder builder = *this;
 	builder.pin(PinType::IN, 0);
-	builder.structure->inputElements.push_back(builder.structure->elements.size() - 1);
+	builder.structure->inputElements.push_back(NamedPin(builder.structure->elements.size() - 1, name));
 	return builder;
 }
 
-CircuitBuilder CircuitBuilder::output() const {
+CircuitBuilder CircuitBuilder::output(const std::string& name) const {
 	CircuitBuilder builder = *this;
 	builder.pin(PinType::OUT, 0);
-	builder.structure->outputElements.push_back(builder.structure->elements.size() - 1);
+	builder.structure->outputElements.push_back(NamedPin(builder.structure->elements.size() - 1, name));
 	return builder;
 }
 
@@ -71,10 +72,10 @@ CircuitBuilder CircuitBuilder::resistor(float resistance) const {
 
 	Element e(ElementType::RESISTOR);
 	e.resistor.resistance = resistance;
-	int elementIndex = builder.structure->addElement(e);
+	Index elementIndex = builder.structure->addElement(e);
 
-	int aSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::RESISTOR_A);
-	int bSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::RESISTOR_B);
+	Index aSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::RESISTOR_A);
+	Index bSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::RESISTOR_B);
 
 	builder.structure->addConnection(builder.socketIndex, aSocketIndex);
 	builder.socketIndex = bSocketIndex;
@@ -87,11 +88,11 @@ CircuitBuilder CircuitBuilder::transistor(const CircuitBuilder& collector) const
 
 	Element e(ElementType::TRANSISTOR);
 	e.transistor.transistorType = TransistorType::NONE;
-	int elementIndex = builder.structure->addElement(e);
+	Index elementIndex = builder.structure->addElement(e);
 
-	int collectorSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::COLLECTOR);
-	int baseSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::BASE);
-	int emitterSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::EMITTER);
+	Index collectorSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::COLLECTOR);
+	Index baseSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::BASE);
+	Index emitterSocketIndex = builder.structure->getSocketIndex(elementIndex, SocketSlot::EMITTER);
 
 	builder.structure->addConnection(builder.socketIndex, baseSocketIndex);
 	builder.structure->addConnection(collector.socketIndex, collectorSocketIndex);
@@ -100,23 +101,16 @@ CircuitBuilder CircuitBuilder::transistor(const CircuitBuilder& collector) const
 	return builder;
 }
 
-CircuitBuilder CircuitBuilder::connection(const CircuitBuilder& other) const {
+CircuitBuilder CircuitBuilder::connect(const CircuitBuilder& other) const {
 	CircuitBuilder builder = *this;
-	builder.pin(PinType::CONNECTOR, 0);
 	builder.structure->addConnection(builder.socketIndex, other.socketIndex);
 	return builder;
 }
 
-CircuitBuilder CircuitBuilder::connection() const {
+CircuitBuilder CircuitBuilder::connector() const {
 	CircuitBuilder builder = *this;
 	builder.pin(PinType::CONNECTOR, 0);
 	return builder;
-}
-
-CircuitBuilder CircuitBuilder::endConnection(const CircuitBuilder& other) const {
-	CircuitBuilder builder = *this;
-	builder.structure->addConnection(builder.socketIndex, other.socketIndex);
-	return builder.unconnect();
 }
 
 CircuitBuilder CircuitBuilder::unconnect() {
@@ -125,13 +119,17 @@ CircuitBuilder CircuitBuilder::unconnect() {
 	return builder;
 }
 
+Index CircuitBuilder::getSocketIndex() {
+	return socketIndex;
+}
+
 void CircuitBuilder::pin(PinType type, float voltage) {
 	Element e(ElementType::PIN);
 	e.pin.pinType = type;
 	e.pin.voltage = voltage;
-	int elementIndex = structure->addElement(e);
+	Index elementIndex = structure->addElement(e);
 	
-	int outSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::PIN);
+	Index outSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::PIN);
 
 	if (socketIndex == -1) {
 		socketIndex = outSocketIndex;
@@ -145,11 +143,11 @@ void CircuitBuilder::pin(PinType type, float voltage) {
 void CircuitBuilder::gate(GateType type, const CircuitBuilder& other) {
 	Element e(ElementType::GATE);
 	e.gate.gateType = type;
-	int elementIndex = structure->addElement(e);
+	Index elementIndex = structure->addElement(e);
 
-	int aSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_A);
-	int bSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_B);
-	int outSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_OUT);
+	Index aSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_A);
+	Index bSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_B);
+	Index outSocketIndex = structure->getSocketIndex(elementIndex, SocketSlot::GATE_OUT);
 	
 	if (type != GateType::NOT) {
 		structure->addConnection(other.socketIndex, bSocketIndex);
@@ -157,4 +155,69 @@ void CircuitBuilder::gate(GateType type, const CircuitBuilder& other) {
 
 	structure->addConnection(socketIndex, aSocketIndex);
 	socketIndex = outSocketIndex;
+}
+
+void CircuitBuilder::reduceConnectors() {
+	std::vector<Index> removedElements;
+	std::vector<Index> removedSockets;
+	std::vector<Index> removedConnections;
+
+	for (Index i = 0; i < structure->elements.size(); i++) {
+		auto& e = structure->elements[i];
+		if (e.elementType == ElementType::PIN) {
+			//for every connector
+			if (e.pin.pinType == PinType::CONNECTOR) {
+				Index socketIndex = e.socketIndises[(int)SocketSlot::PIN];
+				std::vector<Index> sockets;
+				std::vector<Index> connections;
+
+				//get connected sockets and connections
+				for (Index j = 0; j < structure->connections.size(); j++) {
+					auto& c = structure->connections[j];
+					if (c.socket1Index == socketIndex) {
+						sockets.push_back(c.socket2Index);
+						connections.push_back(j);
+					}
+					else if (c.socket2Index == socketIndex) {
+						sockets.push_back(c.socket1Index);
+						connections.push_back(j);
+					}
+				}
+
+				//add new connections
+				for (Index k = 0; k < sockets.size(); k++) {
+					for (Index l = k + 1; l < sockets.size(); l++) {
+						structure->addConnection(sockets[k], sockets[l]);
+					}
+				}
+
+				removedElements.push_back(i);
+				removedSockets.push_back(socketIndex);
+				for (auto& i : connections) {
+					removedConnections.push_back(i);
+				}
+			}
+		}
+	}
+
+	
+	std::sort(removedElements.rbegin(), removedElements.rend());
+	std::sort(removedSockets.rbegin(), removedSockets.rend());
+	std::sort(removedConnections.rbegin(), removedConnections.rend());
+
+	for (auto& i : removedElements) {
+		structure->removeElement(i);
+	}
+
+	for (auto& i : removedSockets) {
+		structure->removeSocket(i);
+	}
+
+	Index last = -1;
+	for (auto& i : removedConnections) {
+		if (i != last) {
+			structure->removeConnection(i);
+		}
+		last = i;
+	}
 }

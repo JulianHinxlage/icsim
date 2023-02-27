@@ -11,9 +11,9 @@
 #include <deque>
 #include <set>
 
-class SocketState {
+class AnalogSocketState {
 public:
-	void set(int socketIndex, float voltage);
+	void set(Index socketIndex, float voltage);
 	float get();
 	void reset();
 
@@ -24,24 +24,40 @@ public:
 	float current = 0;
 
 	//inbound volgates from source socket
-	std::map<int, float> inboundVoltages;
+	std::map<Index, float> inboundVoltages;
 };
 
+class DigitalSocketState {
+public:
+	void set(Index socketIndex, bool value);
+	bool get();
+	void reset();
+
+	bool value = 0;
+};
+ 
 class Circuit {
 public:
 	CircuitStructure structure;
-	std::vector<SocketState> socketStates;
-	std::vector<std::vector<int>> socketConnections;
+	std::vector<AnalogSocketState> socketStates;
+	std::vector<std::vector<Index>> socketConnections;
+	std::vector<Index> changedSockets;
 
 	CircuitBuilder builder() {
 		return CircuitBuilder(&structure);
 	}
 
-	void setInput(int index, float value);
-	float getOutput(int index);
-	float getInput(int index);
+	void setInput(Index index, float value);
+	float getOutput(Index index);
+	float getInput(Index index);
+	void setInput(const std::string& name, float value);
+	float getOutput(const std::string& name);
+	float getInput(const std::string &name);
 	int getInputCount();
 	int getOutputCount();
+	float getSocketValue(Index socketIndex);
+	void setSocketValue(Index socketIndex, float value);
+
 	void reset();
 	void prepare(bool prepareSimulation = true);
 };

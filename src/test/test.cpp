@@ -14,7 +14,7 @@ void transistorGateTest() {
 		auto a = builder.constant(5);
 		auto b = builder.input().transistor(a);
 		auto c = builder.constant(0);
-		builder.input().transistor(b).connection(c).output();
+		builder.input().transistor(b).connect(c).output();
 
 		andCircuit.prepare();
 	}
@@ -28,7 +28,7 @@ void transistorGateTest() {
 		auto b = builder.input().transistor(a);
 		auto c = builder.input().transistor(a);
 		auto d = builder.constant(0);
-		d.connection(b).connection(c).output();
+		d.connect(b).connect(c).output();
 
 		orCircuit.prepare();
 	}
@@ -39,7 +39,7 @@ void transistorGateTest() {
 		auto builder = nandCircuit.builder();
 		
 		auto a = builder.constant(5);
-		auto b = a.connection(builder.output());
+		auto b = a.connect(builder.output());
 		auto c = builder.input().transistor(b);
 		builder.input().transistor(c).constant(0);
 
@@ -55,8 +55,8 @@ void transistorGateTest() {
 		auto b = builder.input().transistor(a);
 		auto c = builder.input().transistor(a);
 		auto d = builder.constant(0);
-		b.connection(c).connection(d);
-		a.connection(builder.output());
+		b.connect(c).connect(d);
+		a.connect(builder.output());
 
 		norCircuit.prepare();
 	}
@@ -67,7 +67,7 @@ void transistorGateTest() {
 		auto builder = notCircuit.builder();
 		
 		auto a = builder.constant(5);
-		auto b = builder.output().connection(a);
+		auto b = builder.output().connect(a);
 		auto c = builder.input().transistor(b).constant(0);
 
 		notCircuit.prepare();
@@ -147,11 +147,11 @@ void rsLatchTest() {
 	auto s = builder.input();
 	auto r = builder.input();
 
-	auto sp = builder.connection();
-	auto rp = builder.connection();
+	auto sp = builder.connector();
+	auto rp = builder.connector();
 
-	s.NOR(sp).connection(rp);
-	r.NOR(rp).connection(sp).output();
+	s.NOR(sp).connect(rp);
+	r.NOR(rp).connect(sp).output();
 
 
 	circuit.prepare();
@@ -197,16 +197,15 @@ void dLatchTest() {
 	auto s = d.NAND(c);
 	auto r = d.NOT().NAND(c);
 
-	auto sp = builder.connection();
-	auto rp = builder.connection();
+	auto sp = builder.connector();
+	auto rp = builder.connector();
 
-	s.NAND(sp).connection(rp).output();
-	r.NAND(rp).connection(sp);
+	r.NAND(rp).connect(sp);
+	s.NAND(sp).connect(rp).output();
 
 	circuit.prepare();
 
 	Evaluator eval;
-	eval.evaluate(&circuit, { {0, 1} });
 
 	eval.evaluate(&circuit, {
 		{0, 0},
