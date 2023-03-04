@@ -2,77 +2,98 @@
 // Copyright (c) 2023 Julian Hinxlage. All rights reserved.
 //
 
-#include "core/Circuit.h"
-#include "core/Evaluator.h"
-#include "core/DigitalCircuitSimulator.h"
-#include "base/MemoryTester.h"
 #include "util/Clock.h"
-#include <string>
+#include "core/Circuit.h"
+#include "core/Pin.h"
+#include "core/Bus.h"
+#include "cpu/MemoryBank.h"
 #include <iostream>
 
-void memoryTest() {
+class SubCircuit {
+public:
+	Circuit* circuit;
+	std::vector<Index> internalPins;
+	std::string name;
+
+	std::map<std::string, Bus> buses;
+	std::map<std::string, Pin> pins;
+};
+
+void testMemory() {
+	Circuit circuit;
+	MemoryBank memory;
+	memory.circuit = &circuit;
+	memory.addressBusSize = 16;
+	memory.dataBusSize = 8;
+	memory.wordCount = 1 << 8;
+	int testCount = 1 << 8;
+
 	Clock totalClock;
 	Clock clock;
 
-	MemoryTester memory;
+	memory.buildBase(false);
+	memory.buildCells();
 
-	memory.dataBusSize = 8;
-	memory.addressBusSize = 10;
-	memory.wordCount = 1 << memory.addressBusSize;
-	int testCount = 1 << 4;
-
-	memory.build();
 	printf("build took %fs\n", clock.round());
-	printf("reduction took %fs\n", clock.round());
-	memory.prepare();
-	printf("prepare took %fs\n", clock.round());
-	printf("\n");
 
-	memory.printInfo();
-	printf("\n");
-	memory.printMemUsage();
-	printf("\n");
+	circuit.prepare();
+
+	printf("prepare took %fs\n", clock.round());
+
+	//info
+	printf("gates: %i\n", circuit.getGateCount());
+	printf("lines: %i\n", circuit.getLineCount());
+	printf("pins:  %i\n", circuit.getPinCount());
+
 
 
 	srand(time(nullptr));
 
-	int maxValue = 1 << memory.dataBusSize;
-	std::vector<int> testData;
+	std::vector<int> testValues;
 	for (int i = 0; i < testCount; i++) {
-		testData.push_back(rand() % maxValue);
+		testValues.push_back(rand() % testCount);
 	}
 
-
-	//write
-	memory.setWrite(1);
-	memory.setRead(0);
 	for (int i = 0; i < testCount; i++) {
-		memory.setAddress(i);
-		memory.setData(testData[i]);
-		memory.tick();
-		memory.printOutput();
-		memory.tickEnd();
+		memory.addressBus.setValue(i);
+		memory.dataBus.setValue(testValues[i]);
+		memory.write.setValue(true);
+		memory.read.setValue(false);
+
+		memory.clock.setValue(false);
+		memory.circuit->simulate();
+		memory.clock.setValue(true);
+		memory.circuit->simulate();
+		printf("%i: %i\n", i, (int)memory.dataBus.getValue());
+		memory.clock.setValue(false);
+		memory.circuit->simulate();
 	}
+	printf("\n");
 
 	bool valid = true;
-
-	//read
-	memory.setWrite(0);
-	memory.setRead(1);
-	memory.setData(0);
+	memory.dataBus.setValue(0);
 	for (int i = 0; i < testCount; i++) {
-		memory.setAddress(i);
-		int expected = testData[i];
-		memory.tick();
-		memory.printOutput();
-		if (expected != memory.getOutput()) {
-			printf("dose not match\n");
+		memory.addressBus.setValue(i);
+		memory.write.setValue(false);
+		memory.read.setValue(true);
+
+
+		memory.clock.setValue(false);
+		memory.circuit->simulate();
+		memory.clock.setValue(true);
+		memory.circuit->simulate();
+		printf("%i: %i\n", i, (int)memory.dataBus.getValue());
+
+		if (testValues[i] != memory.dataBus.getValue()) {
 			valid = false;
 		}
-		memory.tickEnd();
+
+		memory.clock.setValue(false);
+		memory.circuit->simulate();
 	}
 
 	printf("\n");
+
 	if (valid) {
 		printf("result: OK\n");
 	}
@@ -81,11 +102,11 @@ void memoryTest() {
 	}
 
 	printf("\n");
-	printf("simulation took %fs\n", clock.round());
-	printf("total %fs\n", totalClock.round());
+	printf("sim took %fs\n", clock.round());
+	printf("total took %fs\n", totalClock.round());
 }
 
-int main(int argc, char* argv[]) {
-	memoryTest();
+int main() {
+	testMemory();
 	return 0;
 }

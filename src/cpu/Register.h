@@ -4,30 +4,32 @@
 
 #pragma once
 
-#include "Bus.h"
+#include "core/Bus.h"
+#include "core/elements.h"
 
 class Register {
 public:
 	Circuit* circuit;
-	CircuitBuilder clock;
+	Pin clock;
+	std::string name;
 
 	Bus bufferCell;
 	Bus cell;
 	Bus inBus;
 	Bus outBus;
-	CircuitBuilder read;
-	CircuitBuilder write;
+	Pin read;
+	Pin write;
 
 	Register() {
 
 	}
 
-	void init(Circuit* circuit, CircuitBuilder clock) {
+	void init(Circuit* circuit, Pin clock) {
 		this->circuit = circuit;
 		this->clock = clock;
 	}
 
-	void init(Circuit* circuit, CircuitBuilder clock, Bus &inBus, Bus &outBus) {
+	void init(Circuit* circuit, Pin clock, Bus &inBus, Bus &outBus) {
 		this->circuit = circuit;
 		this->clock = clock;
 		this->inBus = inBus;
@@ -35,7 +37,7 @@ public:
 	}
 
 	void build() {
-		CircuitBuilder builder = circuit->builder();
+		Pin builder = Pin(circuit);
 
 		read = builder.connector();
 		write = builder.connector();
@@ -53,7 +55,7 @@ public:
 	}
 
 	void buildBuffered() {
-		CircuitBuilder builder = circuit->builder();
+		Pin builder = Pin(circuit);
 
 		read = builder.connector();
 		write = builder.connector();
@@ -72,14 +74,4 @@ public:
 			bufferCell.addPin(bufferOutput);
 		}
 	}
-
-	Bus connect(CircuitBuilder active) {
-		Bus bus(circuit);
-		for (int i = 0; i < cell.size(); i++) {
-			auto output = cell.getPin(i);
-			bus.addPin(output.AND(active).AND(clock));
-		}
-		return bus;
-	}
-
 };

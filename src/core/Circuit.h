@@ -4,60 +4,71 @@
 
 #pragma once
 
-#include "Element.h"
-#include "CircuitBuilder.h"
-#include "CircuitStructure.h"
+#include "type.h"
+#include "EventQueue.h"
+#include "Pin.h"
+#include "Bus.h"
+
 #include <vector>
-#include <deque>
-#include <set>
+#include <map>
 
-class AnalogSocketState {
-public:
-	void set(Index socketIndex, float voltage);
-	float get();
-	void reset();
-
-	//unit: volt
-	float voltage = 0;
-
-	//unit: ampere
-	float current = 0;
-
-	//inbound volgates from source socket
-	std::map<Index, float> inboundVoltages;
-};
-
-class DigitalSocketState {
-public:
-	void set(Index socketIndex, bool value);
-	bool get();
-	void reset();
-
-	bool value = 0;
-};
- 
 class Circuit {
 public:
-	CircuitStructure structure;
-	std::vector<AnalogSocketState> socketStates;
-	std::vector<std::vector<Index>> socketConnections;
-	std::vector<Index> changedSockets;
+	Index addGate(GateType type);
+	void addLine(Index pinA, Index pinB);
 
-	CircuitBuilder builder() {
-		return CircuitBuilder(&structure);
+	void prepare();
+	int simulate(int timeUnits = -1);
+
+	int getGateCount();
+	int getPinCount();
+	int getLineCount();
+	int64_t getSimulationTime();
+	void setGateDelay(GateType type, int delay);
+	void setSimulationMode(bool sortQueue);
+
+	Pin pin() {
+		return Pin(this);
 	}
 
-	void setInput(Index index, float value);
-	float getOutput(Index index);
-	float getInput(Index index);
-	void setInput(const std::string& name, float value);
-	float getOutput(const std::string& name);
-	float getInput(const std::string &name);
-	int getInputCount();
-	int getOutputCount();
-	float getSocketValue(Index socketIndex);
-	void setSocketValue(Index socketIndex, float value);
+	Bus bus(int size) {
+		Bus bus;
+		bus.create(this, size);
+		return bus;
+	}
 
-	void reset();
-	void prepare(bool prepareSimulation = true);
+private:
+	friend class Pin;
+	friend class CircuitSimulator;
+
+	//circuit definition
+	std::vector<PinType> pins;
+	std::vector<bool> pinStates;
+	std::vector<Index> changedPins;
+	std::vector<std::pair<Index, Index>> lines;
+	int gateCount = 0;
+
+	//propergation groups
+	std::vector<Index> inboundPin;
+	std::map<Index, std::set<Index>> inboundPins;
+	std::vector<Index> outboundPin;
+	std::map<Index, std::set<Index>> outboundPins;
+
+	std::vector<std::set<Index>> groups;
+	std::vector<Index> groupByPin;
+	std::vector<bool> groupUpToDate;
+	std::vector<bool> groupValues;
+
+	//simulation
+	EventQueue queue;
+	int64_t simulationTime = 0;
+	std::vector<int> gateDelays;
+
+	Index addPin(PinType type);
+	void addPinConnection(Index pinA, Index pinB);
+	void initPinConnections();
+	bool getInboundSignal(Index pin);
+	void addPinToQueue(Index pin, int delay = 0, bool external = false);
+	void addOutboundPinsToQueue(Index pin);
+	int processQueue(int timeUnits = -1);
 };

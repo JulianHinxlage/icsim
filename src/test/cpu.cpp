@@ -2,35 +2,35 @@
 // Copyright (c) 2023 Julian Hinxlage. All rights reserved.
 //
 
-#include "core/Circuit.h"
-#include "core/DigitalCircuitSimulator.h"
+#include "cpu/CPU8Bit.h"
 #include "util/Clock.h"
-
-#include "base/Bus.h"
-#include "base/CPU8Bit.h"
-
 #include <string>
-#include <iostream>
-#include <cassert>
 
 class CPUTester {
 public:
 	Circuit circuit;
 	CPU8Bit cpu;
-	DigitalCircuitSimulator sim;
-	
+
 	std::map<std::string, int> instructionMap;
 
+	Pin clock;
+	Pin memoryClock;
+	//currently 22 needed (26 for sorted)
+	int timeUnitsPerClockCycle = 26;
+	int timeUnitsSpentTotal = 0;
+	int clockCyclesTotal = 0;
+	int instructionsTotal = 0;
 
 	void build() {
 		cpu.circuit = &circuit;
-		sim.circuit = &circuit;
 
 		cpu.build();
 
-		auto builder = circuit.builder();
-		builder.input("clock").connect(cpu.clock);
-		builder.input("mem clock").connect(cpu.memory.clock);
+		auto builder = Pin(&circuit);
+		clock = builder.input();
+		memoryClock = builder.input();
+		clock.connect(cpu.clock);
+		memoryClock.connect(cpu.memory.clock);
 
 		circuit.prepare();
 
@@ -64,43 +64,51 @@ public:
 		instructionMap["NOT ACC"] = 0xb3;
 	}
 
+	void sim() {
+		timeUnitsSpentTotal += circuit.simulate(timeUnitsPerClockCycle);
+		//printf("needed: %i\n", circuit.simulate(timeUnitsPerClockCycle));
+	}
+
 	void tick(bool print = false) {
-		circuit.setInput("clock", 0);
-		sim.simulate();
-
+		clock.setValue(0);
+		sim();
+		
 		//fetch
-		circuit.setInput("clock", 1);
-		sim.simulate();
-		
-		circuit.setInput("mem clock", 1);
-		sim.simulate();
-		
-		circuit.setInput("mem clock", 0);
-		sim.simulate();
+		clock.setValue(1);
+		sim();
 
-		circuit.setInput("clock", 0);
-		sim.simulate();
+		memoryClock.setValue(1);
+		sim();
+
+		memoryClock.setValue(0);
+		sim();
+
+		clock.setValue(0);
+		sim();
 
 		//execute
-		circuit.setInput("clock", 1);
-		sim.simulate();
+		clock.setValue(1);
+		sim();
 
-		circuit.setInput("mem clock", 1);
-		sim.simulate();
+		memoryClock.setValue(1);
+		sim();
 
 		if (print) {
 			printState();
 		}
 
-		circuit.setInput("mem clock", 0);
-		sim.simulate();
+		memoryClock.setValue(0);
+		sim();
 
-		circuit.setInput("clock", 0);
-		sim.simulate();
+		clock.setValue(0);
+		sim();
+
+		instructionsTotal++;
+		clockCyclesTotal += 2;
 	}
 
-	void printBus(Bus &bus, const std::string &name) {
-		printf("%s:\t  %s (0x%X)\n", name.c_str(), bus.getValue().c_str(), bus.getIntValue());
+	void printBus(Bus& bus, const std::string& name) {
+		printf("%s:\t  %s (0x%02X)\n", name.c_str(), bus.getStrValue().c_str(), (int)bus.getValue());
 	}
 
 	void printState(int memoryCellCount = 8) {
@@ -109,18 +117,22 @@ public:
 		printBus(cpu.dataBus, "data bus");
 		printBus(cpu.addressBus, "addr bus");
 
-		for (int i = 0; i < cpu.registerCount; i++) {
-			auto &reg = cpu.registerByIndex[i]->cell;
+		printBus(cpu.instBus, "instruction bus");
 
+
+		for (int i = 0; i < cpu.registerCount; i++) {
+			auto& reg = *cpu.registerByIndex[i];
+			auto& cell = reg.cell;
+		
 			if (reg.name == "inst") {
-				printf("%s:\t  %s (0x%X) %s\n", reg.name.c_str(), reg.getValue().c_str(), reg.getIntValue(), instructionFromCode(reg.getIntValue()).c_str());
+				printf("%s:\t  %s (0x%02X) %s\n", reg.name.c_str(), cell.getStrValue().c_str(), (int)cell.getValue(), instructionFromCode(cell.getValue()).c_str());
 			}
 			else if (reg.name == "acc" || reg.name == "pc") {
-				auto& buffer = cpu.registerByIndex[i]->bufferCell;
-				printf("%s:\t  %s (0x%X)\n", reg.name.c_str(), buffer.getValue().c_str(), buffer.getIntValue());
+				auto& buffer = reg.bufferCell;
+				printf("%s:\t  %s (0x%02X)\n", reg.name.c_str(), buffer.getStrValue().c_str(), (int)buffer.getValue());
 			}
 			else {
-				printf("%s:\t  %s (0x%X)\n", reg.name.c_str(), reg.getValue().c_str(), reg.getIntValue());
+				printf("%s:\t  %s (0x%02X)\n", reg.name.c_str(), cell.getStrValue().c_str(), (int)cell.getValue());
 			}
 		}
 
@@ -128,10 +140,11 @@ public:
 		printBus(cpu.aluInB, "alu B");
 		printBus(cpu.aluOut, "alu O");
 
+		memoryCellCount = std::min(memoryCellCount, (int)cpu.memory.cells.size());
 		for (int i = 0; i < memoryCellCount; i++) {
-			printf("mem[%i]:   %s (0x%X)\n", i, cpu.memory.cells[i].getValue().c_str(), cpu.memory.cells[i].getIntValue());
+			printf("mem[0x%02X]:   %s (0x%02X)\n", i, cpu.memory.cells[i].getStrValue().c_str(), (int)cpu.memory.cells[i].getValue());
 		}
-		
+
 		printf("\n");
 	}
 
@@ -183,12 +196,14 @@ public:
 	}
 
 	void loadProgram(const std::string& code, int memoryOffset) {
-		cpu.pc.cell.setIntValue(memoryOffset);
+		cpu.pc.cell.setValue(memoryOffset);
 		auto lines = strSplit(code, "\n", false);
 		for (auto& line : lines) {
 			int byte = codeFomrInstruction(line);
 			if (byte != 0 || line == "NOOP") {
-				cpu.memory.cells[memoryOffset++].setIntValue(byte);
+				if (cpu.memory.cells.size() > memoryOffset) {
+					cpu.memory.cells[memoryOffset++].setValue(byte);
+				}
 			}
 		}
 	}
@@ -196,7 +211,7 @@ public:
 	void run(bool print, int maxCycles = 1024) {
 		for (int i = 0; i < maxCycles; i++) {
 			tick(print);
-			if (cpu.inst.cell.getIntValue() == 0x1) {
+			if (cpu.inst.cell.getValue() == 0x1) {
 				//HALT
 				break;
 			}
@@ -208,46 +223,27 @@ public:
 		printf("data bus: %i bit\n", cpu.dataBusSize);
 		printf("address bus: %i bit\n", cpu.addressBusSize);
 
-		printf("elements: %i\n", (int)circuit.structure.elements.size());
-		printf("sockets: %i\n", (int)circuit.structure.sockets.size());
-		printf("connections: %i\n", (int)circuit.structure.connections.size());
+		printf("gates: %i\n", circuit.getGateCount());
+		printf("lines: %i\n", circuit.getLineCount());
+		printf("pins:  %i\n", circuit.getPinCount());
 
-		int gateCount = 0;
-		for (auto& e : circuit.structure.elements) {
-			if (e.elementType == ElementType::GATE) {
-				gateCount++;
-			}
-		}
-		printf("gates: %i\n", gateCount);
-		printf("transistors: %i\n", gateCount * 2);
+		printf("transistors: %i\n", circuit.getGateCount() * 2);
 		printf("\n");
 	}
 };
 
-void testJmp(CPUTester&cpu) {
-	std::string code = R"(
-LDL 5
-MV ACC A
-LDL 2
-MV ACC ADDRL
+void testCPU() {
+	CPUTester tester;
+	tester.cpu.wordCount = 256;
 
-LD
-ADD A
-ST
+	tester.build();
+	tester.circuit.setGateDelay(GateType::D_LATCH, 3);
+	tester.circuit.setSimulationMode(false);
 
-# jump back by 4 
-LDL 10
-LDH 15
-ADD PC
-MV ACC PC
-HALT
-)";
-	cpu.loadProgram(code, 32);
-	cpu.run(false, 128);
-	cpu.printState();
-}
+	tester.printInfo();
 
-void testMem(CPUTester& cpu) {
+	Clock clock;
+
 	std::string code = R"(
 LDL 3
 LDH 6
@@ -283,23 +279,26 @@ ADD PC
 MV ACC PC
 HALT
 )";
-	cpu.loadProgram(code, 0);
-	cpu.run(false, 1024);
-	cpu.printState(128);
+
+	tester.loadProgram(code, 0);
+
+	clock.reset();
+	tester.run(false, 2000);
+	tester.printState(64);
+	
+	float time = clock.elapsed();
+	printf("took %fs\n", time);
+	printf("time units spent: %i\n", tester.timeUnitsSpentTotal);
+	printf("sim time: %i\n", tester.circuit.getSimulationTime());
+	printf("clock cycles: %i\n", tester.clockCyclesTotal);
+	printf("instructions: %i\n", tester.instructionsTotal);
+	printf("speed: %.3f kH\n", (tester.clockCyclesTotal / time) / 1000);
+	printf("unit took: %.0f ns\n", (time / tester.timeUnitsSpentTotal) * 1000 * 1000 * 1000);
+	printf("units per instruction: %i\n", tester.timeUnitsSpentTotal / tester.instructionsTotal);
+	printf("sim time units per instruction: %i\n", tester.circuit.getSimulationTime() / tester.instructionsTotal);
 }
 
-void cpuTest() {
-	CPUTester cpu;
-	cpu.cpu.wordCount = 1024;
-	cpu.build();
-	cpu.printInfo();
-
-	Clock clock;
-	testMem(cpu);
-	printf("took %fs\n", clock.elapsed());
-}
-
-int main(int argc, char* argv[]) {
-	cpuTest();
+int main() {
+	testCPU();
 	return 0;
 }

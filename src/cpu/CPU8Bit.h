@@ -4,8 +4,8 @@
 
 #pragma once
 
-#include "core/DigitalCircuitSimulator.h"
-#include "Bus.h"
+#include "core/Circuit.h"
+#include "core/Bus.h"
 #include "MemoryBank.h"
 #include "Register.h"
 
@@ -44,7 +44,7 @@ public:
 	int wordCount = 128;
 
 	MemoryBank memory;
-	CircuitBuilder clock;
+	Pin clock;
 
 	Register pc;
 	Register inst;
@@ -73,16 +73,15 @@ public:
 	Bus aluInA;
 	Bus aluInB;
 	Bus aluOut;
-	CircuitBuilder aluOpAdd;
-	CircuitBuilder aluOpSub;
-	CircuitBuilder aluOpAnd;
-	CircuitBuilder aluOpOr;
-	CircuitBuilder aluOpNot;
-	CircuitBuilder aluOpXor;
-
+	Pin aluOpAdd;
+	Pin aluOpSub;
+	Pin aluOpAnd;
+	Pin aluOpOr;
+	Pin aluOpNot;
+	Pin aluOpXor;
 
 	void build() {
-		auto builder = circuit->builder();
+		auto builder = Pin(circuit);
 		clock = builder.connector();
 
 		//memory bank
@@ -155,26 +154,22 @@ public:
 		F.init(circuit, clock, dataBus, dataBus);
 		F.build();
 
-		pc.cell.name = "pc";
-		inst.cell.name = "inst";
-		flag.cell.name = "flag";
-		acc.cell.name = "acc";
-		addrL.cell.name = "addrL";
-		addrH.cell.name = "addrH";
-		A.cell.name = "A";
-		B.cell.name = "B";
-		C.cell.name = "C";
-		D.cell.name = "D";
-		E.cell.name = "E";
-		F.cell.name = "F";
+		pc.name = "pc";
+		inst.name = "inst";
+		flag.name = "flag";
+		acc.name = "acc";
+		addrL.name = "addrL";
+		addrH.name = "addrH";
+		A.name = "A";
+		B.name = "B";
+		C.name = "C";
+		D.name = "D";
+		E.name = "E";
+		F.name = "F";
 	}
 
 	void buildControlUnit() {
-		auto builder = circuit->builder();
-
-		inst.cell.connect(instBus);
-
-
+		auto builder = Pin(circuit);
 		Bus instBusL = instBus.split(0, 2);
 		Bus instBusH = instBus.split(1, 2);
 		Bus dataBusL = dataBus.split(0, 2);
@@ -182,66 +177,67 @@ public:
 		Bus accBusL = acc.cell.split(0, 2);
 		Bus accBusH = acc.cell.split(1, 2);
 
-		Bus registerSelection = multiplexer(instBusL);
-		Bus opcodeSelection = multiplexer(instBusH);
-		CircuitBuilder writeToSelectedRegister = builder.connector();
-		CircuitBuilder readFromSelectedRegister = builder.connector();
-
-		CircuitBuilder accWriteFromAlu = builder.connector();
-		dataBus.connect(accWriteBus, accWriteFromAlu.NOT());
-		aluOut.connect(accWriteBus, accWriteFromAlu);
-
-		for (int i = 0; i < 12; i++) {
-			registerSelection.getPin(i).AND(readFromSelectedRegister).connect(registerByIndex[i]->read);
-			registerSelection.getPin(i).AND(writeToSelectedRegister).connect(registerByIndex[i]->write);
-		}
-
 		//toggle fetch/execute cycle on clock
 		auto executeCycle = builder.connector();
 		auto fetchCycle = executeCycle.NOT();
-		dLatch(dLatch(fetchCycle, clock), clock.NOT()).connect(executeCycle);
+		fetchCycle.dLatch(clock).dLatch(clock.NOT()).connect(executeCycle);
 
-		CircuitBuilder halt_signal = builder.connector();
-		auto fetch = fetchCycle.AND(halt_signal.NOT());
+		Pin halt_signal = builder.connector();
+		Pin fetch = fetchCycle.AND(halt_signal.NOT());
 		auto execute = executeCycle;
+
 
 		//fetch instruction
 		fetch.AND(fetch).connect(memory.read);
-		addressBus.connect(memory.addressBus, fetch);
-		memory.dataBus.connect(dataBus, fetch);
+		addressBus.AND(fetch).connect(memory.addressBus);
+		memory.dataBus.AND(fetch).connect(dataBus);
 		fetch.AND(fetch).AND(memory.clock).connect(inst.write);
 		fetch.AND(fetch).connect(pc.read);
+
+
 
 		//increment PC
 		Bus zero;
 		zero.create(circuit, addressBusSize);
 		Bus incOut;
 		incOut.create(circuit, addressBusSize);
-		fullAdder(addressBus, zero, incOut, builder.constant(1));
-		incOut.connect(pcWriteBus, fetch);
+		fullAdder(addressBus, zero, incOut, builder.one());
+		incOut.AND(fetch).connect(pcWriteBus);
 		fetch.AND(fetch).connect(pc.write);
 
 
 
-		CircuitBuilder op_ldl = opcodeSelection.getPin(1).AND(clock).AND(execute);
-		CircuitBuilder op_ldh = opcodeSelection.getPin(2).AND(clock).AND(execute);
-		CircuitBuilder op_ld = opcodeSelection.getPin(3).AND(clock).AND(execute);
-		CircuitBuilder op_st = opcodeSelection.getPin(4).AND(clock).AND(execute);
-		CircuitBuilder op_mv_acc = opcodeSelection.getPin(5).AND(clock).AND(execute);
-		CircuitBuilder op_mv_x = opcodeSelection.getPin(6).AND(clock).AND(execute);
+		//decode instruction
+		inst.cell.AND(execute).connect(instBus);
+		Bus registerSelection = multiplexer(instBusL);
+		Bus opcodeSelection = multiplexer(instBusH);
+		Pin writeToSelectedRegister = builder.connector();
+		Pin readFromSelectedRegister = builder.connector();
 
-		CircuitBuilder op_add = opcodeSelection.getPin(7).AND(clock).AND(execute);
-		CircuitBuilder op_sub = opcodeSelection.getPin(8).AND(clock).AND(execute);
-		CircuitBuilder op_and = opcodeSelection.getPin(9).AND(clock).AND(execute);
-		CircuitBuilder op_or = opcodeSelection.getPin(10).AND(clock).AND(execute);
-		CircuitBuilder op_not = opcodeSelection.getPin(11).AND(clock).AND(execute);
-		CircuitBuilder op_xor = opcodeSelection.getPin(12).AND(clock).AND(execute);
+		for (int i = 0; i < 12; i++) {
+			registerSelection.getPin(i).AND(readFromSelectedRegister).connect(registerByIndex[i]->read);
+			registerSelection.getPin(i).AND(writeToSelectedRegister).connect(registerByIndex[i]->write);
+		}
 
-		instBusL.connect(dataBusL, op_ldl);
-		accBusH.connect(dataBusH, op_ldl);
+		Pin op_ldl = opcodeSelection.getPin(1).AND(clock).AND(execute);
+		Pin op_ldh = opcodeSelection.getPin(2).AND(clock).AND(execute);
+		Pin op_ld = opcodeSelection.getPin(3).AND(clock).AND(execute);
+		Pin op_st = opcodeSelection.getPin(4).AND(clock).AND(execute);
+		Pin op_mv_acc = opcodeSelection.getPin(5).AND(clock).AND(execute);
+		Pin op_mv_x = opcodeSelection.getPin(6).AND(clock).AND(execute);
 
-		instBusL.connect(dataBusH, op_ldh);
-		accBusL.connect(dataBusL, op_ldh);
+		Pin op_add = opcodeSelection.getPin(7).AND(clock).AND(execute);
+		Pin op_sub = opcodeSelection.getPin(8).AND(clock).AND(execute);
+		Pin op_and = opcodeSelection.getPin(9).AND(clock).AND(execute);
+		Pin op_or = opcodeSelection.getPin(10).AND(clock).AND(execute);
+		Pin op_not = opcodeSelection.getPin(11).AND(clock).AND(execute);
+		Pin op_xor = opcodeSelection.getPin(12).AND(clock).AND(execute);
+
+		instBusL.AND(op_ldl).connect(dataBusL);
+		accBusH.AND(op_ldl).connect(dataBusH);
+
+		instBusL.AND(op_ldh).connect(dataBusH);
+		accBusL.AND(op_ldh).connect(dataBusL);
 
 		op_ldl.OR(op_ldh).OR(op_ld.AND(memory.clock)).OR(op_mv_x).connect(acc.write);
 		op_st.OR(op_mv_acc).connect(acc.read);
@@ -249,22 +245,26 @@ public:
 		op_mv_acc.AND(op_mv_acc).connect(writeToSelectedRegister);
 
 		//special case: read and write PC
-		addressBus.split(0, 2).connect(dataBus, pc.read.AND(execute));
-		dataBus.connect(pcWriteBus.split(0, 2), pc.write.AND(execute));
+		addressBus.split(0, 2).AND(pc.read.AND(execute)).connect(dataBus);
+		dataBus.AND(pc.write.AND(execute)).connect(pcWriteBus.split(0, 2));
 
 		op_ld.AND(op_ld).connect(memory.read);
-		addressBus.connect(memory.addressBus, op_ld);
-		memory.dataBus.connect(dataBus, op_ld);
+		addressBus.AND(op_ld).connect(memory.addressBus);
+		memory.dataBus.AND(op_ld).connect(dataBus);
 
 		op_st.AND(op_st).connect(memory.write);
-		addressBus.connect(memory.addressBus, op_st);
-		dataBus.connect(memory.dataBus, op_st);
+		addressBus.AND(op_st).connect(memory.addressBus);
+		dataBus.AND(op_st).connect(memory.dataBus);
 
-		addrL.cell.connect(addressBus.split(0, 2), op_ld.OR(op_st));
-		addrH.cell.connect(addressBus.split(1, 2), op_ld.OR(op_st));
+		addrL.cell.AND(op_ld.OR(op_st)).connect(addressBus.split(0, 2));
+		addrH.cell.AND(op_ld.OR(op_st)).connect(addressBus.split(1, 2));
 
 
 		//arithmetic
+		Pin accWriteFromAlu = builder.connector();
+		dataBus.AND(accWriteFromAlu.NOT()).connect(accWriteBus);
+		aluOut.AND(accWriteFromAlu).connect(accWriteBus);
+
 		op_add.AND(op_add).connect(aluOpAdd);
 		op_sub.AND(op_sub).connect(aluOpSub);
 		op_and.AND(op_and).connect(aluOpAnd);
@@ -276,25 +276,26 @@ public:
 		any_alu.AND(any_alu).connect(acc.write);
 		any_alu.AND(any_alu).connect(readFromSelectedRegister);
 
-		acc.cell.connect(aluInA, any_alu.AND(any_alu));
-		dataBus.connect(aluInB, any_alu.AND(any_alu));
+		acc.cell.AND(any_alu.AND(any_alu)).connect(aluInA);
+		dataBus.AND(any_alu.AND(any_alu)).connect(aluInB);
 
 		auto op_halt = opcodeSelection.getPin(0).AND(clock).AND(execute).AND(registerSelection.getPin(1));
 		dLatch(op_halt, clock.AND(execute)).connect(halt_signal);
 	}
 
 	void buildALU() {
+		Pin builder = Pin(circuit);
 		//add
 		Bus addOut;
 		addOut.create(circuit, dataBusSize);
-		fullAdder(aluInA, aluInB, addOut, circuit->builder().constant(0));
-		addOut.connect(aluOut, aluOpAdd);
+		fullAdder(aluInA, aluInB, addOut, builder.zero());
+		addOut.AND(aluOpAdd).connect(aluOut);
 
 		//sub
 		Bus subOut;
 		subOut.create(circuit, dataBusSize);
-		fullAdder(aluInA, aluInB, subOut, circuit->builder().constant(0));
-		subOut.connect(aluOut, aluOpSub);
+		fullAdder(aluInA, aluInB, subOut, builder.zero());
+		subOut.AND(aluOpSub).connect(aluOut);
 
 		//AND
 		Bus andOut;
@@ -302,7 +303,7 @@ public:
 		for (int i = 0; i < aluInA.size(); i++) {
 			aluInA.getPin(i).AND(aluInB.getPin(i)).connect(andOut.getPin(i));
 		}
-		andOut.connect(aluOut, aluOpAnd);
+		andOut.AND(aluOpAnd).connect(aluOut);
 
 		//OR
 		Bus orOut;
@@ -310,7 +311,7 @@ public:
 		for (int i = 0; i < aluInA.size(); i++) {
 			aluInA.getPin(i).OR(aluInB.getPin(i)).connect(orOut.getPin(i));
 		}
-		orOut.connect(aluOut, aluOpOr);
+		orOut.AND(aluOpOr).connect(aluOut);
 
 		//NOT
 		Bus notOut;
@@ -318,7 +319,7 @@ public:
 		for (int i = 0; i < aluInA.size(); i++) {
 			aluInA.getPin(i).NOT().connect(notOut.getPin(i));
 		}
-		notOut.connect(aluOut, aluOpNot);
+		notOut.AND(aluOpNot).connect(aluOut);
 
 		//XOR
 		Bus xorOut;
@@ -326,10 +327,10 @@ public:
 		for (int i = 0; i < aluInA.size(); i++) {
 			aluInA.getPin(i).XOR(aluInB.getPin(i)).connect(xorOut.getPin(i));
 		}
-		xorOut.connect(aluOut, aluOpXor);
+		xorOut.AND(aluOpXor).connect(aluOut);
 	}
 
-	CircuitBuilder fullAdder(Bus& aBus, Bus& bBus, Bus& outBus, CircuitBuilder carry) {
+	Pin fullAdder(Bus& aBus, Bus& bBus, Bus& outBus, Pin carry) {
 		for (int i = 0; i < aBus.size(); i++) {
 			auto a = aBus.getPin(i);
 			auto b = bBus.getPin(i);
