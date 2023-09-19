@@ -4,6 +4,7 @@
 
 #include "Clock.h"
 #include <chrono>
+#include <thread>
 
 uint64_t nowNano(){
     return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();

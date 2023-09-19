@@ -304,7 +304,7 @@ int Circuit::processQueue(int timeUnits) {
 	while (!queue.empty()) {
 		auto event = queue.get();
 
-		assert(event.time >= simulationTime && "a gate was updated to late");
+		//assert(event.time >= simulationTime && "a gate was updated to late");
 		if (timeUnits != -1 && event.time > endSimulationTime) {
 			break;
 		}

@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.5)
 set(CMAKE_CXX_STANDARD 20)
 
+if(WIN32)
+    set(LIBRARY_OUTPUT_PATH ${CMAKE_CURRENT_BINARY_DIR})
+endif()
+
 project(core)
 file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/core/*.cpp src/util/*.cpp)
 add_library(${PROJECT_NAME} STATIC ${SOURCES})
@@ -22,3 +26,5 @@ file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS src/test/cpu.cpp)
 add_executable(${PROJECT_NAME} ${SOURCES})
 include_directories(${PROJECT_NAME} PUBLIC src)
 target_link_libraries(${PROJECT_NAME} PUBLIC core)
+
+project(icsim)

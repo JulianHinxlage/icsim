@@ -300,5 +300,6 @@ HALT
 
 int main() {
 	testCPU();
+	system("pause");
 	return 0;
 }
